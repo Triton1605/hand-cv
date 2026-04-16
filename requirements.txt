@@ -1,0 +1,6 @@
+mediapipe==0.10.18
+opencv-python
+numpy<2
+cvzone==1.6.1
+imutils
+tflite-runtime

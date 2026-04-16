@@ -1,0 +1,20 @@
+hand-cv/
+├── src/
+│   ├── config.py
+│   ├── detector.py
+│   ├── coral_detector.py   ← NEW: Coral Edge TPU palm detection wrapper
+│   ├── hud.py
+│   └── main.py
+├── models/
+│   └── palm_detection_builtin_256_integer_quant_edgetpu.tflite  ← downloaded by setup.sh
+├── venv/
+│   ├── bin/...
+│   ├── include/...
+│   ├── lib/...
+│   ├── lib64/...
+│   ├── pyvenv.cfg/...
+│   └── share/...
+├── setup.sh
+├── requirements.txt
+├── README.md
+└── file_structure.txt

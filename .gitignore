@@ -1,0 +1,24 @@
+# --- Environment ---
+venv/
+.env
+
+# --- Downloads (Managed by setup.sh) ---
+# We ignore the models folder because setup.sh downloads the 
+# large .tflite files automatically.
+models/
+
+# --- Python Artifacts ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ipynb_checkpoints/
+
+# --- System & OS ---
+.DS_Store
+thumbs.db
+
+# --- Project Specific ---
+# If your setup.sh or python scripts generate local logs
+*.log
