@@ -5,6 +5,28 @@ CAMERA_WIDTH    = 640
 CAMERA_HEIGHT   = 480
 CAMERA_FPS      = 20
 
+# Camera orientation in degrees. Rotates the captured frame before processing.
+#   0   = normal (no rotation)
+#   90  = camera rotated 90° clockwise   → correct with 90° counter-clockwise
+#   180 = camera upside down             → correct with 180° rotation
+#   270 = camera rotated 90° anti-clock  → correct with 90° clockwise
+CAMERA_ROTATION = 180
+
+# Mirror mode - flips the frame horizontally so it acts like a mirror.
+#True = mirrored, False = false
+CAMERA_MIRROR = True
+
+# ─── Fan ──────────────────────────────────────────────────────────────────────
+# Fan speed while the program is running.
+#   0 = let the Pi manage the fan itself (no override)
+#   1 = force low speed
+#   2 = force medium-low speed
+#   3 = force medium-high speed
+#   4 = force full speed
+# On exit the fan is always restored to 0 (Pi thermal management takes over).
+FAN_SPEED = 4
+FAN_SYSFS = "/sys/class/thermal/cooling_device0/cur_state"
+
 # ─── MediaPipe ────────────────────────────────────────────────────────────────
 MAX_HANDS               = 4     # max hands detectable; more = slower
 DETECTION_CONFIDENCE    = 0.5   # higher = stricter first-frame detection

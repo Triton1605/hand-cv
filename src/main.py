@@ -39,7 +39,10 @@ import cv2
 # ── Make sure src/ is on the path when run from project root ─────────────────
 sys.path.insert(0, os.path.dirname(__file__))
 
-from config import CAMERA_WIDTH, CAMERA_HEIGHT, CAMERA_FPS, CORAL_MODEL_PATH
+from config import (
+    CAMERA_WIDTH, CAMERA_HEIGHT, CAMERA_FPS, CAMERA_ROTATION, CAMERA_MIRROR,
+    CORAL_MODEL_PATH, FAN_SPEED, FAN_SYSFS,
+)
 from detector import HandDetector
 from hud import draw_hand, draw_global_hud
 from coral_detector import CoralPalmDetector  # graceful no-op if unavailable
@@ -49,19 +52,84 @@ from coral_detector import CoralPalmDetector  # graceful no-op if unavailable
 os.environ.setdefault("GLOG_minloglevel", "3")
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 
+# ── Fan control ───────────────────────────────────────────────────────────────
+_fan_original_state = None
+
+def fan_set(speed: int):
+    """Write a fan speed (0-4) to the sysfs interface via sudo."""
+    try:
+        subprocess.run(
+            ["sudo", "sh", "-c", f"echo {speed} > {FAN_SYSFS}"],
+            check=True, capture_output=True,
+        )
+    except Exception as e:
+        print(f"[hand-cv] WARNING: could not set fan speed: {e}")
+
+def fan_read() -> int:
+    """Read the current fan state from sysfs."""
+    try:
+        with open(FAN_SYSFS) as f:
+            return int(f.read().strip())
+    except Exception:
+        return 0
+
+def fan_start():
+    """Override fan speed if FAN_SPEED > 0, saving the current state."""
+    global _fan_original_state
+    if FAN_SPEED == 0:
+        return
+    _fan_original_state = fan_read()
+    print(f"[hand-cv] Fan: setting speed {FAN_SPEED}/4 (was {_fan_original_state})")
+    fan_set(FAN_SPEED)
+
+def fan_stop():
+    """Restore the fan to its original state on exit."""
+    if FAN_SPEED == 0 or _fan_original_state is None:
+        return
+    print(f"[hand-cv] Fan: restoring speed to {_fan_original_state}")
+    fan_set(_fan_original_state)
+
+# ── Temperature ───────────────────────────────────────────────────────────────
+TEMP_SYSFS = "/sys/class/thermal/thermal_zone0/temp"
+
+def read_temp() -> float | None:
+    """Read CPU temperature in Celsius. Returns None on failure."""
+    try:
+        with open(TEMP_SYSFS) as f:
+            return int(f.read().strip()) / 1000.0
+    except Exception:
+        return None
+
+
+_ROTATION_MAP = {
+    0:   None,
+    90:  cv2.ROTATE_90_COUNTERCLOCKWISE,
+    180: cv2.ROTATE_180,
+    270: cv2.ROTATE_90_CLOCKWISE,
+}
+
+def apply_rotation(frame):
+    """Rotate and/or mirror frame to correct for physical camera orientation."""
+    code = _ROTATION_MAP.get(CAMERA_ROTATION)
+    if code is not None:
+        frame = cv2.rotate(frame, code)
+    if CAMERA_MIRROR:
+        frame = cv2.flip(frame, 1)
+    return frame
+
 
 def build_camera_cmd():
     return [
         "rpicam-vid",
-        "--width",     str(CAMERA_WIDTH),
-        "--height",    str(CAMERA_HEIGHT),
-        "--framerate", str(CAMERA_FPS),
-        "--codec",     "yuv420",
-        "--timeout",   "0",          # run indefinitely
+        "--width",        str(CAMERA_WIDTH),
+        "--height",       str(CAMERA_HEIGHT),
+        "--framerate",    str(CAMERA_FPS),
+        "--codec",        "yuv420",
+        "--timeout",      "0",          # run indefinitely
         "--nopreview",
-        "--no-raw",                  # Pi 5: suppress the PISP_COMP1 raw stream
-	"--buffer-count", "2",
-        "-o", "-",                   # pipe raw YUV420 frames to stdout
+        "--no-raw",                     # Pi 5: suppress the PISP_COMP1 raw stream
+        "--buffer-count", "2",          # reduce pipeline latency
+        "-o", "-",                      # pipe raw YUV420 frames to stdout
     ]
 
 
@@ -84,6 +152,9 @@ def read_frame(pipe, width, height):
 
 
 def main():
+    # ── Fan ──────────────────────────────────────────────────────────────────
+    fan_start()
+
     # ── Coral setup ──────────────────────────────────────────────────────────
     coral_enabled = os.environ.get("CORAL_ENABLE", "0") == "1"
     coral = CoralPalmDetector(CORAL_MODEL_PATH) if coral_enabled else None
@@ -115,6 +186,8 @@ def main():
         sys.exit(1)
 
     print(f"[hand-cv] Camera running at {CAMERA_WIDTH}x{CAMERA_HEIGHT} @ {CAMERA_FPS}fps")
+    if CAMERA_ROTATION != 0:
+        print(f"[hand-cv] Camera rotation: {CAMERA_ROTATION}°")
     print("[hand-cv] Press  q  or  Esc  to quit.")
 
     cv2.namedWindow("Hand CV", cv2.WINDOW_NORMAL)
@@ -126,15 +199,18 @@ def main():
 
     try:
         while True:
-            #drain stale buffered frames, keep only the freshest
+            # Drain stale buffered frames, keep only the freshest
             for _ in range(2):
                 frame = read_frame(proc.stdout, CAMERA_WIDTH, CAMERA_HEIGHT)
                 if frame is None:
                     break
-            
+
             if frame is None:
                 print("[hand-cv] Camera stream ended.")
                 break
+
+            # ── Orientation correction ───────────────────────────────────────
+            frame = apply_rotation(frame)
 
             # ── Detection ────────────────────────────────────────────────────
             detections = detector.process(frame)
@@ -157,7 +233,9 @@ def main():
 
             # ── Global HUD ───────────────────────────────────────────────────
             coral_active = coral is not None and coral.available
-            draw_global_hud(frame, detections, fps_display, coral_active=coral_active)
+            draw_global_hud(frame, detections, fps_display,
+                            coral_active=coral_active,
+                            temp_c=read_temp())
 
             # ── Show ─────────────────────────────────────────────────────────
             cv2.imshow("Hand CV", frame)
@@ -175,6 +253,7 @@ def main():
         if coral is not None:
             coral.close()
         cv2.destroyAllWindows()
+        fan_stop()
         print("[hand-cv] Done.")
 
 

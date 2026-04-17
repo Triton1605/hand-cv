@@ -78,7 +78,36 @@ def draw_hand(frame, detection, idx):
     _text(frame, px_text, cx + 8, cy - 8, color=box_color, scale=0.45, thickness=1)
 
 
-def draw_global_hud(frame, detections, fps, coral_active: bool = False):
+def _temp_color(temp_c: float) -> tuple[int, int, int]:
+    """
+    Return a BGR color interpolated across the temperature scale:
+      < 45°C  → blue
+      45–60°C → green
+      60–75°C → orange
+      >= 75°C → red
+    Smoothly interpolated between bands.
+    """
+    def lerp(a, b, t):
+        t = max(0.0, min(1.0, t))
+        return tuple(int(a[i] + (b[i] - a[i]) * t) for i in range(3))
+
+    BLUE   = (255, 100,   0)   # BGR
+    GREEN  = (  0, 200,   0)
+    ORANGE = (  0, 145, 255)
+    RED    = (  0,   0, 220)
+
+    if temp_c < 45:
+        return BLUE
+    elif temp_c < 60:
+        return lerp(BLUE, GREEN, (temp_c - 45) / 15)
+    elif temp_c < 75:
+        return lerp(GREEN, ORANGE, (temp_c - 60) / 15)
+    else:
+        return lerp(ORANGE, RED, (temp_c - 75) / 15)
+
+
+def draw_global_hud(frame, detections, fps, coral_active: bool = False,
+                    temp_c: float | None = None):
     """Draw the top-left status panel and FPS. Shows Coral indicator if active."""
     h, w = frame.shape[:2]
 
@@ -90,14 +119,26 @@ def draw_global_hud(frame, detections, fps, coral_active: bool = False):
           color=HUD_COLOR_PRIMARY, scale=0.55, thickness=2)
 
     # ── Coral indicator – below FPS ─────────────────────────────────────────
+    right_y = fh + 22
     if coral_active:
         coral_text = "CORAL TPU"
         (cw, ch), _ = cv2.getTextSize(coral_text, HUD_FONT, 0.45, 1)
         cx_pos = w - cw - 16
-        cy_pos = fh + 22
-        _overlay_rect(frame, cx_pos - 2, cy_pos - ch - 2, cw + 10, ch + 8, alpha=0.5)
-        _text(frame, coral_text, cx_pos + 2, cy_pos + 2,
+        _overlay_rect(frame, cx_pos - 2, right_y - ch - 2, cw + 10, ch + 8, alpha=0.5)
+        _text(frame, coral_text, cx_pos + 2, right_y + 2,
               color=HUD_COLOR_CORAL, scale=0.45, thickness=1)
+        right_y += 18
+
+    # ── Temperature – below Coral indicator (or below FPS if no Coral) ──────
+    if temp_c is not None:
+        temp_f    = temp_c * 9 / 5 + 32
+        temp_text = f"{temp_c:.1f}C  {temp_f:.1f}F"
+        color     = _temp_color(temp_c)
+        (tw, th), _ = cv2.getTextSize(temp_text, HUD_FONT, 0.45, 1)
+        tx_pos = w - tw - 16
+        _overlay_rect(frame, tx_pos - 2, right_y - th - 2, tw + 10, th + 8, alpha=0.5)
+        _text(frame, temp_text, tx_pos + 2, right_y + 2,
+              color=color, scale=0.45, thickness=1)
 
     # ── Hands detected count – top left ─────────────────────────────────────
     n     = len(detections)
