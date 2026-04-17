@@ -107,7 +107,7 @@ def _temp_color(temp_c: float) -> tuple[int, int, int]:
 
 
 def draw_global_hud(frame, detections, fps, coral_active: bool = False,
-                    temp_c: float | None = None):
+                    temp_c: float | None = None, det_ms: float = 0.0):
     """Draw the top-left status panel and FPS. Shows Coral indicator if active."""
     h, w = frame.shape[:2]
 
@@ -139,6 +139,16 @@ def draw_global_hud(frame, detections, fps, coral_active: bool = False,
         _overlay_rect(frame, tx_pos - 2, right_y - th - 2, tw + 10, th + 8, alpha=0.5)
         _text(frame, temp_text, tx_pos + 2, right_y + 2,
               color=color, scale=0.45, thickness=1)
+        right_y += 18
+
+    # ── Detection time – rolling 30-frame average ────────────────────────────
+    if det_ms > 0:
+        det_text = f"DET: {det_ms:.1f}ms"
+        (dw, dh), _ = cv2.getTextSize(det_text, HUD_FONT, 0.45, 1)
+        dx_pos = w - dw - 16
+        _overlay_rect(frame, dx_pos - 2, right_y - dh - 2, dw + 10, dh + 8, alpha=0.5)
+        _text(frame, det_text, dx_pos + 2, right_y + 2,
+              color=HUD_COLOR_WHITE, scale=0.45, thickness=1)
 
     # ── Hands detected count – top left ─────────────────────────────────────
     n     = len(detections)

@@ -197,6 +197,10 @@ def main():
     fps_display = 0.0
     fps_timer   = time.time()
 
+    det_times   = []          # rolling window of detection durations (seconds)
+    DET_WINDOW  = 30          # number of frames to average over
+    det_ms_avg  = 0.0
+
     try:
         while True:
             # Drain stale buffered frames, keep only the freshest
@@ -212,8 +216,15 @@ def main():
             # ── Orientation correction ───────────────────────────────────────
             frame = apply_rotation(frame)
 
-            # ── Detection ────────────────────────────────────────────────────
+            # ── Detection (timed) ────────────────────────────────────────────
+            det_start  = time.perf_counter()
             detections = detector.process(frame)
+            det_end    = time.perf_counter()
+
+            det_times.append(det_end - det_start)
+            if len(det_times) > DET_WINDOW:
+                det_times.pop(0)
+            det_ms_avg = (sum(det_times) / len(det_times)) * 1000
 
             # ── Draw landmarks on frame ──────────────────────────────────────
             for d in detections:
@@ -235,7 +246,8 @@ def main():
             coral_active = coral is not None and coral.available
             draw_global_hud(frame, detections, fps_display,
                             coral_active=coral_active,
-                            temp_c=read_temp())
+                            temp_c=read_temp(),
+                            det_ms=det_ms_avg)
 
             # ── Show ─────────────────────────────────────────────────────────
             cv2.imshow("Hand CV", frame)
