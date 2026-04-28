@@ -1,8 +1,8 @@
 import os
 
 # ─── Camera ───────────────────────────────────────────────────────────────────
-CAMERA_WIDTH    = 640
-CAMERA_HEIGHT   = 480
+CAMERA_WIDTH    = 384 #640
+CAMERA_HEIGHT   = 288 #480
 CAMERA_FPS      = 20
 
 # Camera orientation in degrees. Rotates the captured frame before processing.
@@ -10,11 +10,12 @@ CAMERA_FPS      = 20
 #   90  = camera rotated 90° clockwise   → correct with 90° counter-clockwise
 #   180 = camera upside down             → correct with 180° rotation
 #   270 = camera rotated 90° anti-clock  → correct with 90° clockwise
-CAMERA_ROTATION = 180
+CAMERA_ROTATION = 0 #180
 
-# Mirror mode - flips the frame horizontally so it acts like a mirror.
-#True = mirrored, False = false
-CAMERA_MIRROR = True
+# Mirror mode — flips the frame horizontally so it acts like a mirror.
+# True = mirrored, False = normal
+#CAMERA_MIRROR = True
+CAMERA_MIRROR = False
 
 # ─── Fan ──────────────────────────────────────────────────────────────────────
 # Fan speed while the program is running.
@@ -27,8 +28,15 @@ CAMERA_MIRROR = True
 FAN_SPEED = 4
 FAN_SYSFS = "/sys/class/thermal/cooling_device0/cur_state"
 
-# ─── MediaPipe ────────────────────────────────────────────────────────────────
-MAX_HANDS               = 4     # max hands detectable; more = slower
+# ─── Pipeline mode ────────────────────────────────────────────────────────────
+# "mediapipe" = standard CPU-only MediaPipe Hands pipeline (safe, proven)
+# "coral"     = two-stage Coral palm detection + CPU TFLite landmark pipeline
+#               Requires Coral USB plugged in and libedgetpu installed.
+#               Falls back to "mediapipe" mode if Coral is unavailable.
+PIPELINE_MODE = "mediapipe"
+#PIPELINE_MODE = "coral"
+
+MAX_HANDS               = 2     # max hands detectable; more = slower
 DETECTION_CONFIDENCE    = 0.5   # higher = stricter first-frame detection
 TRACKING_CONFIDENCE     = 0.3   # higher = stricter frame-to-frame tracking
 

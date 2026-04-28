@@ -41,11 +41,12 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from config import (
     CAMERA_WIDTH, CAMERA_HEIGHT, CAMERA_FPS, CAMERA_ROTATION, CAMERA_MIRROR,
-    CORAL_MODEL_PATH, FAN_SPEED, FAN_SYSFS,
+    CORAL_MODEL_PATH, FAN_SPEED, FAN_SYSFS, PIPELINE_MODE,
+    MAX_HANDS,
 )
 from detector import HandDetector
 from hud import draw_hand, draw_global_hud
-from coral_detector import CoralPalmDetector  # graceful no-op if unavailable
+from coral_detector import CoralPalmDetector  # legacy Coral helper (unused in coral mode)
 
 
 # ── Suppress noisy TFLite / absl stderr spam ─────────────────────────────────
@@ -155,20 +156,23 @@ def main():
     # ── Fan ──────────────────────────────────────────────────────────────────
     fan_start()
 
-    # ── Coral setup ──────────────────────────────────────────────────────────
-    coral_enabled = os.environ.get("CORAL_ENABLE", "0") == "1"
-    coral = CoralPalmDetector(CORAL_MODEL_PATH) if coral_enabled else None
+    # ── Pipeline selection ────────────────────────────────────────────────────
+    pipeline  = None
+    coral_active = False
 
-    if coral_enabled:
-        if coral.available:
-            print("[hand-cv] Coral Edge TPU palm detection: ENABLED")
-        else:
-            print("[hand-cv] WARNING: Coral requested but not available — "
-                  "falling back to CPU-only mode.")
-            coral = None
+    if PIPELINE_MODE == "coral":
+        try:
+            from coral_pipeline import CoralHandPipeline
+            pipeline = CoralHandPipeline(max_hands=MAX_HANDS)
+            coral_active = True
+            print("[hand-cv] Pipeline: Coral (palm on TPU + landmarks on CPU)")
+        except Exception as e:
+            print(f"[hand-cv] WARNING: Coral pipeline failed to load: {e}")
+            print("[hand-cv] Falling back to MediaPipe CPU pipeline.")
 
-    # ── MediaPipe detector ────────────────────────────────────────────────────
-    detector = HandDetector(coral_detector=coral)
+    if pipeline is None:
+        pipeline = HandDetector()
+        print("[hand-cv] Pipeline: MediaPipe CPU-only")
 
     # ── Camera subprocess ─────────────────────────────────────────────────────
     cmd = build_camera_cmd()
@@ -218,7 +222,7 @@ def main():
 
             # ── Detection (timed) ────────────────────────────────────────────
             det_start  = time.perf_counter()
-            detections = detector.process(frame)
+            detections = pipeline.process(frame)
             det_end    = time.perf_counter()
 
             det_times.append(det_end - det_start)
@@ -228,7 +232,7 @@ def main():
 
             # ── Draw landmarks on frame ──────────────────────────────────────
             for d in detections:
-                detector.draw_landmarks(frame, d['landmarks'])
+                pipeline.draw_landmarks(frame, d['landmarks'])
 
             # ── Draw per-hand HUD elements ───────────────────────────────────
             for i, d in enumerate(detections):
@@ -243,7 +247,6 @@ def main():
                 fps_timer   = time.time()
 
             # ── Global HUD ───────────────────────────────────────────────────
-            coral_active = coral is not None and coral.available
             draw_global_hud(frame, detections, fps_display,
                             coral_active=coral_active,
                             temp_c=read_temp(),
@@ -261,9 +264,7 @@ def main():
         print("[hand-cv] Shutting down…")
         proc.send_signal(signal.SIGTERM)
         proc.wait(timeout=3)
-        detector.close()
-        if coral is not None:
-            coral.close()
+        pipeline.close()
         cv2.destroyAllWindows()
         fan_stop()
         print("[hand-cv] Done.")
